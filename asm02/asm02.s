@@ -1,44 +1,42 @@
 section .bss
-    buffer resb 3   
-
-section .data
-    msg db "1337", 10  ; 
-    msg_len equ $ - msg
+    input resb 3   ; Réserver 3 octets pour l'entrée ("42\n")
 
 section .text
     global _start
 
 _start:
+    ; Lire l'entrée standard
+    mov rax, 0        ; sys_read
+    mov rdi, 0        ; stdin
+    mov rsi, input    ; buffer
+    mov rdx, 3        ; taille
+    syscall
+    
+    ; Comparer avec "42\n"
+    mov rax, [input]
+    cmp word [input], 0x3234  ; Vérifie si "42"
+    jne exit_1
+    cmp byte [input+2], 0x0A  ; Vérifie si "\n"
+    jne exit_1
+    
+    ; Afficher "1337\n"
+    mov rax, 1        ; sys_write
+    mov rdi, 1        ; stdout
+    mov rsi, msg
+    mov rdx, msg_len
+    syscall
+    
+    ; Retourner 0
+    xor rdi, rdi
+    jmp exit
 
-    mov rax, 0         
-    mov rdi, 0       
-    mov rsi, buffer    
-    mov rdx, 3         
+exit_1:
+    mov rdi, 1   ; Code de retour 1
+    
+exit:
+    mov rax, 60  ; sys_exit
     syscall
 
-
-    mov al, [buffer]    
-    cmp al, '4'         
-    jne not_42         
-
-    mov al, [buffer+1]  
-    cmp al, '2'         
-    jne not_42          
-
-
-    mov rax, 1         
-    mov rdi, 1         
-    mov rsi, msg       
-    mov rdx, msg_len   
-    syscall
-
-
-    mov rax, 60        
-    xor rdi, rdi       
-    syscall
-
-not_42:
-
-    mov rax, 60        
-    mov rdi, 1         
-    syscall
+section .data
+    msg db "1337\n"
+    msg_len equ $ - msg
