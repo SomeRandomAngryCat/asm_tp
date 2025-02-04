@@ -1,29 +1,29 @@
 section .text
-    global _start
+global _start
 
 _start:
-    mov rsi, [rsp + 16]
-    test rsi, rsi
-    jz exit_0
-
-    mov rdi, rsi
-    call string_length
-
+    mov rax, [rsp]
+    cmp rax, 2
+    jb exit0
+    mov rsi, [rsp+16]
+    mov rbx, rsi
+    xor rcx, rcx
+.loop:
+    mov al, byte [rsi+rcx]
+    cmp al, 0
+    je .print
+    inc rcx
+    jmp .loop
+.print:
     mov rax, 1
     mov rdi, 1
+    mov rsi, rbx
+    mov rdx, rcx
     syscall
-
-exit_0:
     mov rax, 60
     xor rdi, rdi
     syscall
-
-string_length:
-    mov rdx, 0
-.loop:
-    cmp byte [rdi + rdx], 0
-    je .done
-    inc rdx
-    jmp .loop
-.done:
-    ret
+exit0:
+    mov rax, 60
+    xor rdi, rdi
+    syscall
