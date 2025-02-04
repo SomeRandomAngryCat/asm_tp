@@ -1,5 +1,5 @@
 section .bss
-    number resb 10
+    buffer: resb 32
 
 section .text
     global _start
@@ -8,33 +8,33 @@ _start:
 
     mov rax, 0
     mov rdi, 0
-    mov rsi, number
-    mov rdx, 10
+    lea rsi, [buffer]
+    mov rdx, 32
     syscall
 
-    mov rbx, 0
-    mov rdi, number
 
-convert_ascii:
-    movzx rax, byte [rdi]
-    cmp rax, 10
+    lea rsi, [buffer]
+    xor rbx, rbx
+
+parse_loop:
+    mov al, byte [rsi]
+    cmp al, 10
     je check_parity
-    sub rax, '0'
+    cmp al, '0'
+    jl check_parity
+    cmp al, '9'
+    jg check_parity
+
     imul rbx, rbx, 10
+    sub al, '0'
+    movzx rax, al
     add rbx, rax
-    inc rdi
-    jmp convert_ascii
+    inc rsi
+    jmp parse_loop
 
 check_parity:
-    test rbx, 1
-    jz return_0
-
-return_1:
+    mov rax, rbx
+    and rax, 1
+    mov rdi, rax
     mov rax, 60
-    mov rdi, 1
-    syscall
-
-return_0:
-    mov rax, 60
-    xor rdi, rdi
     syscall
