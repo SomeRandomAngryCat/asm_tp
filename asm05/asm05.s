@@ -4,17 +4,17 @@ global _start
 _start:
     mov rax, [rsp]
     cmp rax, 2
-    jb exit0
+    jb no_param
     mov rsi, [rsp+16]
     mov rbx, rsi
     xor rcx, rcx
 .loop:
     mov al, byte [rsi+rcx]
     cmp al, 0
-    je .print
+    je print
     inc rcx
     jmp .loop
-.print:
+print:
     mov rax, 1
     mov rdi, 1
     mov rsi, rbx
@@ -23,7 +23,7 @@ _start:
     mov rax, 60
     xor rdi, rdi
     syscall
-exit0:
+no_param:
     mov rax, 60
-    xor rdi, rdi
+    mov rdi, 1
     syscall
