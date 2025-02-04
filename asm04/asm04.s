@@ -28,6 +28,7 @@ _start:
 
 validate_number:
     mov rcx, 0
+    mov rdx, 0
 check_loop:
     mov al, [rsi+rcx]
     test al, al
@@ -37,11 +38,15 @@ check_loop:
     cmp al, '9'
     ja invalid_input
     inc rcx
+    inc rdx
     jmp check_loop
 invalid_input:
     mov rax, 1
-    jmp exit_2
+    mov rdi, 2
+    jmp exit
 valid:
+    cmp rdx, 0
+    je invalid_input
     xor rax, rax
     ret
 
