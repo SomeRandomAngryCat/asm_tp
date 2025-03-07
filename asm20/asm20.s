@@ -22,6 +22,9 @@ section .data
     cmd_reverse db "REVERSE ", 0
     cmd_reverse_len equ $ - cmd_reverse - 1
     
+    cmd_echo db "ECHO ", 0
+    cmd_echo_len equ $ - cmd_echo - 1
+    
     ; Structure sockaddr_in pour l'adresse d'écoute (0.0.0.0:4242)
     server_addr:
         server_family    dw 2         ; AF_INET
@@ -172,6 +175,14 @@ client_loop:
     test rax, rax
     jz handle_reverse
     
+    ; Vérifier si c'est la commande ECHO
+    mov rdi, buffer
+    mov rsi, cmd_echo
+    mov rdx, cmd_echo_len
+    call strncmp
+    test rax, rax
+    jz handle_echo
+    
     ; Commande inconnue, ignorer et continuer
     jmp client_loop
 
@@ -225,6 +236,35 @@ strlen_done:
     mov rax, 1                  ; sys_write
     mov rdi, [client_fd]        ; client fd
     mov rsi, reverse_buffer     ; buffer
+    mov rdx, rcx                ; longueur
+    syscall
+    
+    jmp client_loop
+
+handle_echo:
+    ; Extraire la chaîne à renvoyer (après "ECHO ")
+    mov rdi, buffer
+    add rdi, cmd_echo_len       ; Pointer après "ECHO "
+    
+    ; Calculer la longueur de la chaîne
+    mov rcx, 0                  ; Compteur
+echo_strlen_loop:
+    mov al, [rdi + rcx]         ; Récupérer le caractère
+    test al, al                 ; Vérifier si c'est la fin de la chaîne
+    jz echo_strlen_done
+    inc rcx                     ; Incrémenter le compteur
+    jmp echo_strlen_loop
+echo_strlen_done:
+    
+    ; Ajouter un saut de ligne à la fin
+    mov byte [rdi + rcx], 10    ; Newline
+    inc rcx                     ; Augmenter la longueur
+    
+    ; Envoyer la chaîne telle quelle
+    mov rax, 1                  ; sys_write
+    mov rdi, [client_fd]        ; client fd
+    mov rsi, buffer
+    add rsi, cmd_echo_len       ; Pointer après "ECHO "
     mov rdx, rcx                ; longueur
     syscall
     
