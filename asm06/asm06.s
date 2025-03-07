@@ -1,168 +1,158 @@
 section .bss
-    result_buffer resb 20   ; Buffer for result string
+    buffer resb 32          ; Buffer for output
 
 section .text
     global _start
 
 _start:
-    ; Check if we have exactly 2 parameters
-    pop rcx                 ; Get argc
-    cmp rcx, 3              ; Program name + 2 parameters = 3
-    jne error_exit          ; If not 3, exit with error
-    
-    pop rcx                 ; Skip program name (argv[0])
+    pop rax                 ; Get argc
+    cmp rax, 3              ; Check if we have exactly 3 arguments
+    jne error               ; If not, handle error
+
+    pop rax                 ; Skip argv[0] (program name)
     
     ; Get first number
-    pop rcx                 ; Get argv[1] (first number string)
-    call string_to_int
-    push rax                ; Save first number
+    pop rdi                 ; Get first parameter
+    call atoi               ; Convert to integer
+    mov r10, rax            ; Store first number in r10
     
     ; Get second number
-    pop rcx                 ; Get argv[2] (second number string)
-    call string_to_int
-    pop rbx                 ; Retrieve first number
+    pop rdi                 ; Get second parameter
+    call atoi               ; Convert to integer
     
-    ; Add the numbers
-    add rax, rbx
+    ; Add numbers
+    add rax, r10            ; Add the two numbers
     
     ; Convert result to string
-    mov rsi, result_buffer
-    call int_to_string
+    mov rdi, buffer         ; Set buffer address
+    call itoa               ; Convert to string
+    mov rdx, rax            ; Length of string
     
-    ; Display the result
-    mov rax, 1              ; sys_write syscall number
-    mov rdi, 1              ; stdout file descriptor
-    mov rsi, result_buffer  ; string to write
-    mov rdx, rcx            ; string length
+    ; Print the result
+    mov rax, 1              ; sys_write
+    mov rdi, 1              ; stdout
+    mov rsi, buffer         ; String to print
+                            ; rdx already has length
     syscall
     
-    ; Add newline
-    mov byte [result_buffer], 10   ; Newline character
-    mov rax, 1              ; sys_write syscall number
-    mov rdi, 1              ; stdout file descriptor
-    mov rsi, result_buffer  ; string with newline
-    mov rdx, 1              ; length 1
+    ; Print newline
+    mov byte [buffer], 10   ; Newline character
+    mov rax, 1              ; sys_write
+    mov rdi, 1              ; stdout
+    mov rsi, buffer         ; String (just newline)
+    mov rdx, 1              ; Length of 1
     syscall
     
-    ; Exit with success
-    mov rax, 60             ; sys_exit syscall number
-    xor rdi, rdi            ; exit code 0
+    ; Exit with code 0
+    mov rax, 60             ; sys_exit
+    xor rdi, rdi            ; code 0
     syscall
 
-error_exit:
-    ; Exit with error
-    mov rax, 60             ; sys_exit syscall number
-    mov rdi, 1              ; exit code 1
+error:
+    ; Exit with code 1
+    mov rax, 60             ; sys_exit
+    mov rdi, 1              ; code 1
     syscall
 
 ; Convert string to integer
-; Input: RCX = string address
-; Output: RAX = integer value
-string_to_int:
-    xor rax, rax            ; Clear result
-    xor rdx, rdx            ; Clear sign flag (0 = positive)
+; Input: RDI = string address
+; Output: RAX = integer
+atoi:
+    xor rax, rax            ; Initialize result
+    xor rcx, rcx            ; Initialize sign flag
     
-    ; Check if first character is a minus sign
-    cmp byte [rcx], '-'
-    jne .process_digits
-    inc rcx                 ; Skip the minus sign
-    mov rdx, 1              ; Set sign flag
+    ; Check for minus sign
+    cmp byte [rdi], '-'
+    jne .digits
+    inc rdi                 ; Skip minus
+    mov rcx, 1              ; Set sign flag
     
-.process_digits:
-    xor rbx, rbx            ; Clear temp
-    mov bl, [rcx]           ; Get current character
-    test bl, bl             ; Check for null terminator
-    jz .finalize
-    
-    sub bl, '0'             ; Convert from ASCII to numeric value
-    imul rax, 10            ; Multiply current result by 10
-    add rax, rbx            ; Add new digit
-    
-    inc rcx                 ; Move to next character
-    jmp .process_digits
-    
-.finalize:
-    ; Apply sign if needed
-    test rdx, rdx
+.digits:
+    movzx rdx, byte [rdi]   ; Get current character
+    test rdx, rdx           ; Check for null terminator
     jz .done
-    neg rax                 ; Negate if negative
+    
+    ; Convert digit
+    sub rdx, '0'            ; ASCII to number
+    imul rax, 10            ; Multiply by 10
+    add rax, rdx            ; Add digit
+    
+    inc rdi                 ; Next character
+    jmp .digits
     
 .done:
+    ; Handle sign
+    test rcx, rcx
+    jz .exit
+    neg rax                 ; Negate if negative
+    
+.exit:
     ret
 
 ; Convert integer to string
-; Input: RAX = integer, RSI = buffer
-; Output: RCX = string length
-int_to_string:
+; Input: RAX = integer, RDI = buffer
+; Output: RAX = length
+itoa:
     push rbx
-    push rsi
+    push r12
+    mov r12, rdi            ; Save buffer address
     
-    xor rcx, rcx            ; Clear length counter
-    
-    ; Handle negative sign
+    ; Handle negative
     test rax, rax
     jns .positive
     neg rax                 ; Make positive
-    mov byte [rsi], '-'     ; Add minus sign
-    inc rsi                 ; Move buffer position
-    inc rcx                 ; Increment length
+    mov byte [r12], '-'     ; Store minus
+    inc r12                 ; Increment buffer
     
 .positive:
-    mov rbx, 10             ; Divisor
+    mov rbx, rax            ; Copy number to rbx
+    mov rcx, 10             ; Base 10
+    
+    ; Count digits by dividing
+    xor r8, r8              ; Digit counter
+    mov rax, rbx            ; Get number
     
     ; Special case for 0
     test rax, rax
-    jnz .convert
-    mov byte [rsi], '0'     ; Store '0'
-    inc rsi                 ; Move buffer position
-    inc rcx                 ; Increment length
+    jnz .count
+    mov byte [r12], '0'     ; Store '0'
+    inc r12                 ; Move buffer
+    inc r8                  ; Count digit
     jmp .done
     
+.count:
+    test rax, rax
+    jz .convert
+    xor rdx, rdx            ; Clear for division
+    div rcx                 ; Divide by 10
+    inc r8                  ; Count digit
+    jmp .count
+    
 .convert:
-    ; We'll build the string in reverse and then flip it
-    mov r8, rsi             ; Save start position
+    ; Convert digit by digit, right to left
+    mov rax, rbx            ; Restore number
+    add r12, r8             ; Move to end of buffer
+    dec r12                 ; Adjust (insert right to left)
     
 .convert_loop:
     test rax, rax
-    jz .reverse
-    
-    xor rdx, rdx
-    div rbx                 ; Divide by 10
-    add dl, '0'             ; Convert remainder to ASCII
-    mov [rsi], dl           ; Store digit
-    inc rsi                 ; Move buffer position
-    inc rcx                 ; Increment length
+    jz .finish
+    xor rdx, rdx            ; Clear for division
+    div rcx                 ; Divide by 10
+    add dl, '0'             ; Convert to ASCII
+    mov [r12], dl           ; Store digit
+    dec r12                 ; Move left
     jmp .convert_loop
     
-.reverse:
-    mov r9, rcx             ; Save original length
-    mov r10, r8             ; Start of digits
-    
-    ; Check for minus sign
-    cmp byte [r10], '-'
-    jne .start_reverse
-    inc r10                 ; Skip minus sign
-    dec r9                  ; Adjust length for reversal
-    
-.start_reverse:
-    dec rsi                 ; Last digit position
-    shr r9, 1               ; Half the length for swap count
-    
-.reverse_loop:
-    test r9, r9
-    jz .done
-    
-    mov dl, [r10]           ; Swap characters
-    mov bl, [rsi]
-    mov [r10], bl
-    mov [rsi], dl
-    
-    inc r10                 ; Move start forward
-    dec rsi                 ; Move end backward
-    dec r9                  ; Decrement counter
-    jmp .reverse_loop
+.finish:
+    ; r8 has the digit count
+    ; Check if we had a negative sign
+    cmp byte [rdi], '-'
+    jne .done
+    inc r8                  ; Count the sign
     
 .done:
-    pop rsi                 ; Restore original buffer address
+    mov rax, r8             ; Return length
+    pop r12
     pop rbx
     ret
