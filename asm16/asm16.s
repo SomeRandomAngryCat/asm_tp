@@ -9,62 +9,63 @@ section .text
 
 _start:
     mov rax, [rsp]          ; argc
-    cmp rax, 2              ; Vérifie qu'on a bien exactement 1 argument
+    cmp rax, 2              ; exactement 1 argument attendu
     jne exit_fail
 
     mov rdi, [rsp + 16]     ; argv[1] (nom du fichier)
 
-    ; Ouvre le fichier (sys_open)
+    ; ouvrir le fichier
     mov rax, 2              ; sys_open
-    mov rsi, 2              ; flags (O_RDWR)
+    mov rsi, 2              ; O_RDWR
     xor rdx, rdx            ; mode = 0
     syscall
     cmp rax, 0
-    jl exit_fail            ; erreur ouverture
+    jl exit_fail
 
-    mov rdi, rax            ; sauvegarde fd dans rdi
+    mov r12, rax            ; stocke fd dans r12
 
-    ; Remet explicitement offset à 0 (début du fichier)
+    ; lire tout le fichier depuis le début
+    mov rax, 0              ; sys_read
+    mov rdi, r12            ; fd
+    mov rsi, buffer         ; buffer
+    mov rdx, 8192           ; taille
+    syscall
+    cmp rax, 0
+    jle close_file
+
+    mov rcx, rax            ; taille lue
+    xor rbx, rbx
+
+search_loop:
+    cmp rcx, 4
+    jl close_file
+
+    mov eax, [buffer + rbx]
+    cmp eax, 0x37333331     ; "1337" en little endian
+    je patch_found
+
+    inc rbx
+    dec rcx
+    jmp search_loop
+
+patch_found:
+    ; replacer offset au bon endroit
     mov rax, 8              ; sys_lseek
-    xor rsi, rsi            ; offset 0
+    mov rdi, r12            ; fd
+    mov rsi, rbx            ; offset trouvé
     xor rdx, rdx            ; SEEK_SET
     syscall
 
-    ; Lire le fichier entier dans buffer
-    mov rax, 0              ; sys_read
-    mov rsi, buffer         ; buffer temporaire
-    mov rdx, 8192           ; lecture de 8K max
-    syscall
-
-    mov rcx, rax            ; taille lue dans rcx
-    mov rsi, buffer         ; pointeur vers buffer
-    xor rbx, rbx
-
-find_loop:
-    cmp rcx, 4
-    jl close_file
-    mov eax, [rsi + rbx]
-    cmp eax, 0x37333331     ; "1337" en little endian
-    je patch_found
-    inc rbx
-    dec rcx
-    jmp find_loop
-
-patch_found:
-    ; Déplace à nouveau offset exactement sur la chaîne trouvée
-    mov rax, 8              ; sys_lseek
-    mov rsi, rbx            ; offset trouvé
-    mov rdx, 0              ; SEEK_SET
-    syscall
-
-    ; Écriture du patch ("H4CK")
+    ; écrire le patch
     mov rax, 1              ; sys_write
-    mov rsi, patch          ; données à écrire
+    mov rdi, r12            ; fd
+    mov rsi, patch          ; "H4CK"
     mov rdx, 4              ; 4 octets
     syscall
 
 close_file:
     mov rax, 3              ; sys_close
+    mov rdi, r12            ; fd
     syscall
 
 exit_ok:
