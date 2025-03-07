@@ -1,144 +1,201 @@
-section .data
-    error_msg db "Erreur: entrée invalide", 10    ; Message d'erreur
-    error_len equ $ - error_msg                   ; Longueur du message d'erreur
-
 section .bss
-    buffer resb 16                                ; Buffer pour stocker l'entrée
+    buffer resb 32          ; Buffer for input
 
 section .text
     global _start
 
 _start:
-    ; Lire l'entrée depuis stdin
-    mov rax, 0              ; syscall read
+    ; Read input number
+    mov rax, 0              ; sys_read
     mov rdi, 0              ; stdin
-    mov rsi, buffer         ; buffer où stocker l'entrée
-    mov rdx, 16             ; taille maximale à lire
+    mov rsi, buffer         ; buffer address
+    mov rdx, 32             ; buffer size
+    syscall
+    
+    ; Check if read was successful
+    test rax, rax
+    jle input_error         ; Error or EOF
+    
+    ; Convert string to integer
+    mov rdi, buffer         ; Set buffer address
+    call atoi               ; Convert to integer
+    
+    ; Check for conversion error
+    cmp rax, -1             ; Check error code
+    je invalid_input
+    
+    ; Store number in r12
+    mov r12, rax
+    
+    ; Check if number is prime
+    call is_prime
+    
+    ; Exit with appropriate code (0 if prime, 1 if not prime)
+    mov rdi, rax            ; Set exit code
+    mov rax, 60             ; sys_exit
     syscall
 
-    ; Vérifier qu'on a bien lu des données
-    cmp rax, 0              ; Si on n'a rien lu (EOF)
-    jle error               ; Afficher une erreur
-
-    ; Convertir la chaîne en nombre
-    mov rdi, buffer         ; Adresse du buffer contenant la chaîne
-    mov rsi, rax            ; Longueur de la chaîne lue
-    call str_to_int         ; Convertir la chaîne en entier
-    jc error                ; Si erreur de conversion, afficher message
-
-    ; Vérifier si le nombre est premier
-    mov rdi, rax            ; Mettre le nombre dans rdi
-    call is_prime           ; Vérifier si le nombre est premier
-
-    ; Si le nombre est premier, rax=1, sinon rax=0
-    test rax, rax           ; Test si rax est 0
-    jz exit_not_prime       ; Si rax=0, le nombre n'est pas premier
-
-exit_prime:
-    ; Retourner 0 (nombre premier)
-    mov rax, 60             ; syscall exit
-    mov rdi, 0              ; code de retour 0 (nombre premier)
+input_error:
+    ; Exit with error code 2 (read error)
+    mov rax, 60             ; sys_exit
+    mov rdi, 2              ; error code 2
     syscall
 
-exit_not_prime:
-    ; Retourner 1 (nombre non premier)
-    mov rax, 60             ; syscall exit
-    mov rdi, 1              ; code de retour 1 (nombre non premier)
+invalid_input:
+    ; Exit with error code 2 (invalid number)
+    mov rax, 60             ; sys_exit
+    mov rdi, 2              ; error code 2
     syscall
 
-error:
-    ; Afficher le message d'erreur
-    mov rax, 1              ; syscall write
-    mov rdi, 1              ; stdout
-    mov rsi, error_msg      ; message d'erreur
-    mov rdx, error_len      ; longueur du message
-    syscall
-
-    ; Sortir avec code d'erreur 1
-    mov rax, 60             ; syscall exit
-    mov rdi, 1              ; code de retour 1
-    syscall
-
-; Fonction pour convertir une chaîne en entier
-; Entrée: rdi = adresse de la chaîne, rsi = longueur de la chaîne
-; Sortie: rax = valeur entière, CF = drapeau d'erreur
-str_to_int:
-    xor rax, rax            ; Initialiser le résultat à 0
-    xor rcx, rcx            ; Initialiser le compteur de caractères
-
-str_to_int_loop:
-    cmp rcx, rsi            ; Vérifier si on a atteint la fin de la chaîne
-    jge str_to_int_done     ; Si oui, terminer
-
-    movzx rbx, byte [rdi + rcx] ; Charger le caractère courant
-
-    ; Ignorer le caractère de nouvelle ligne à la fin
-    cmp rbx, 10             ; Vérifier si c'est un caractère de nouvelle ligne
-    je str_to_int_done      ; Si oui, terminer
-
-    cmp rbx, '0'            ; Vérifier si le caractère est < '0'
-    jl error_invalid        ; Si oui, c'est une erreur
-    cmp rbx, '9'            ; Vérifier si le caractère est > '9'
-    jg error_invalid        ; Si oui, c'est une erreur
-
-    ; Convertir le caractère en chiffre
-    sub rbx, '0'            ; Convertir ASCII en valeur numérique
-
-    ; Multiplier le résultat actuel par 10 et ajouter le nouveau chiffre
-    imul rax, 10            ; rax = rax * 10
-    add rax, rbx            ; rax = rax + rbx
-
-    inc rcx                 ; Passer au caractère suivant
-    jmp str_to_int_loop     ; Continuer la boucle
-
-error_invalid:
-    stc                     ; Mettre le drapeau de retenue (CF) à 1 pour signaler une erreur
+; Convert string to integer
+; Input: RDI = string address
+; Output: RAX = integer or -1 if error
+atoi:
+    xor rax, rax            ; Initialize result
+    xor rcx, rcx            ; Initialize sign flag
+    
+    ; Skip whitespace
+.skip_whitespace:
+    movzx rdx, byte [rdi]   ; Get current character
+    cmp rdx, ' '            ; Check for space
+    je .next_whitespace
+    cmp rdx, 9              ; Check for tab
+    je .next_whitespace
+    cmp rdx, 10             ; Check for newline
+    je .next_whitespace
+    cmp rdx, 13             ; Check for carriage return
+    je .next_whitespace
+    jmp .check_sign
+    
+.next_whitespace:
+    inc rdi                 ; Next character
+    jmp .skip_whitespace
+    
+.check_sign:
+    ; Check for minus sign
+    cmp byte [rdi], '-'
+    jne .check_plus
+    inc rdi                 ; Skip minus
+    mov rcx, 1              ; Set sign flag
+    jmp .check_digits
+    
+.check_plus:
+    ; Check for plus sign (optional)
+    cmp byte [rdi], '+'
+    jne .check_digits
+    inc rdi                 ; Skip plus
+    
+.check_digits:
+    ; Ensure we have at least one digit
+    movzx rdx, byte [rdi]   ; Get current character
+    cmp rdx, '0'            ; Check if below '0'
+    jl .error
+    cmp rdx, '9'            ; Check if above '9'
+    jg .error
+    
+.digits:
+    movzx rdx, byte [rdi]   ; Get current character
+    
+    ; Check for end of string or non-digit
+    cmp rdx, 0              ; Check for null terminator
+    je .done
+    cmp rdx, 10             ; Check for newline
+    je .done
+    cmp rdx, 13             ; Check for carriage return
+    je .done
+    
+    ; Validate digit
+    cmp rdx, '0'            ; Check if below '0'
+    jl .error
+    cmp rdx, '9'            ; Check if above '9'
+    jg .error
+    
+    ; Convert digit
+    sub rdx, '0'            ; ASCII to number
+    imul rax, 10            ; Multiply by 10
+    add rax, rdx            ; Add digit
+    
+    inc rdi                 ; Next character
+    jmp .digits
+    
+.done:
+    ; Check for more characters after end of number
+    cmp byte [rdi], 0       ; Check for null
+    je .apply_sign
+    cmp byte [rdi], 10      ; Check for newline
+    je .apply_sign
+    cmp byte [rdi], 13      ; Check for carriage return
+    je .apply_sign
+    
+    ; If there are any non-whitespace characters, it's an error
+    movzx rdx, byte [rdi]   ; Get current character
+    cmp rdx, ' '            ; Check for space
+    je .next_trailing
+    cmp rdx, 9              ; Check for tab
+    je .next_trailing
+    jmp .error
+    
+.next_trailing:
+    inc rdi                 ; Next character
+    jmp .done
+    
+.apply_sign:
+    ; Handle sign
+    test rcx, rcx
+    jz .validate
+    neg rax                 ; Negate if negative
+    
+.validate:
+    ; Check for valid prime number (>=2)
+    cmp rax, 2
+    jl .error
+    ret
+    
+.error:
+    mov rax, -1             ; Return error code
     ret
 
-str_to_int_done:
-    ; Vérifier qu'on a lu au moins un chiffre
-    test rcx, rcx           ; Si rcx=0, aucun chiffre n'a été lu
-    jz error_invalid        ; Si oui, c'est une erreur
-
-    clc                     ; Effacer le drapeau de retenue (CF) pour signaler le succès
-    ret
-
-; Fonction pour vérifier si un nombre est premier
-; Entrée: rdi = nombre à vérifier
-; Sortie: rax = 1 si le nombre est premier, 0 sinon
+; Check if number is prime
+; Input: R12 = number to check
+; Output: RAX = 0 if prime, 1 if not prime
 is_prime:
-    ; Cas spéciaux
-    cmp rdi, 1              ; Les nombres inférieurs à 2 ne sont pas premiers
-    jle not_prime
-    cmp rdi, 2              ; 2 est premier
-    je prime
+    ; Handle special cases
+    cmp r12, 2              ; 2 is prime
+    je .is_prime
+    cmp r12, 3              ; 3 is prime
+    je .is_prime
     
-    ; Vérifier si le nombre est pair (divisible par 2)
-    test rdi, 1             ; Les nombres pairs ont le bit LSB = 0
-    jz not_prime            ; Si le nombre est pair et > 2, il n'est pas premier
-
-    ; Vérifier les diviseurs impairs jusqu'à la racine carrée
-    mov rcx, 3              ; Commencer avec le diviseur 3
-check_divisors:
-    mov rax, rcx            ; rax = diviseur
-    mul rax                 ; rax = diviseur * diviseur
-    cmp rax, rdi            ; Comparer diviseur² avec le nombre
-    jg prime                ; Si diviseur² > nombre, c'est un nombre premier
-
-    mov rax, rdi            ; rax = nombre
-    xor rdx, rdx            ; Effacer rdx pour la division
-    div rcx                 ; rax = nombre / diviseur, rdx = nombre % diviseur
+    ; Check if number is even
+    test r12, 1             ; Test least significant bit
+    jz .not_prime           ; If even (except 2), not prime
     
-    test rdx, rdx           ; Vérifier si le reste est 0
-    jz not_prime            ; Si le reste est 0, le nombre n'est pas premier
-
-    add rcx, 2              ; Passer au prochain nombre impair
-    jmp check_divisors      ; Continuer la vérification
-
-prime:
-    mov rax, 1              ; Retourner 1 (nombre premier)
+    ; Check divisibility from 3 to sqrt(number)
+    mov rcx, 3              ; Start testing from 3
+    
+.check_loop:
+    ; Check if we've gone beyond sqrt(number)
+    mov rax, rcx
+    mul rax                 ; rax = rcx * rcx
+    cmp rax, r12            ; Compare with number
+    jg .is_prime            ; If rcx > sqrt(number), it's prime
+    
+    ; Check divisibility
+    mov rax, r12
+    xor rdx, rdx            ; Clear dividend high part
+    div rcx                 ; Divide number by current divisor
+    test rdx, rdx           ; Check remainder
+    jz .not_prime           ; If divisible, not prime
+    
+    ; Try next odd number
+    add rcx, 2
+    jmp .check_loop
+    
+.is_prime:
+    ; Number is prime
+    xor rax, rax            ; Return 0
     ret
-
-not_prime:
-    mov rax, 0              ; Retourner 0 (nombre non premier)
+    
+.not_prime:
+    ; Number is not prime
+    mov rax, 1              ; Return 1
     ret
