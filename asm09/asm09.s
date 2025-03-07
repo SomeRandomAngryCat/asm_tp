@@ -11,7 +11,7 @@ _start:
     ; Get argument count
     pop rcx                 ; Get argc
     cmp rcx, 2              ; Check if there's at least 1 argument
-    je decimal_to_binary    ; If exactly 2 args (program + number), convert to binary
+    je decimal_to_hex       ; If exactly 2 args (program + number), convert to hexadecimal (default)
     cmp rcx, 3              ; Check if there are 2 arguments
     je check_mode           ; If 3 args (program + flag + number), check mode
     jmp error               ; Otherwise, error
@@ -29,13 +29,13 @@ check_mode:
     cmp byte [rdi+2], 0     ; Check if string ends after "b"
     jne error
     
-    ; Mode is hexadecimal, get the number
+    ; Mode is binary, get the number
     pop rdi                 ; Get the number string
     call atoi               ; Convert to integer
-    jmp decimal_to_hex      ; Convert to hexadecimal
+    jmp decimal_to_binary   ; Convert to binary
     
-decimal_to_binary:
-    ; Mode is binary, get the number
+decimal_to_hex:
+    ; Mode is hexadecimal (default), get the number
     pop rcx                 ; Skip program name
     pop rdi                 ; Get number string
     call atoi               ; Convert to integer
@@ -44,16 +44,16 @@ decimal_to_binary:
     cmp rax, -1
     je error
     
-    ; Convert to binary
+    ; Convert to hexadecimal
     mov rdi, result         ; Output buffer
     mov rsi, rax            ; Number to convert
-    call int_to_bin         ; Convert to binary
+    call int_to_hex         ; Convert to hexadecimal
     
     ; Display the result
     mov rax, 1              ; sys_write
     mov rdi, 1              ; stdout
     mov rsi, result         ; result string
-    mov rdx, r10            ; length (from int_to_bin)
+    mov rdx, r10            ; length (from int_to_hex)
     syscall
     
     ; Add newline
@@ -69,21 +69,21 @@ decimal_to_binary:
     xor rdi, rdi            ; exit code 0
     syscall
     
-decimal_to_hex:
+decimal_to_binary:
     ; Check for error
     cmp rax, -1
     je error
     
-    ; Convert to hexadecimal
+    ; Convert to binary
     mov rdi, result         ; Output buffer
     mov rsi, rax            ; Number to convert
-    call int_to_hex         ; Convert to hexadecimal
+    call int_to_bin         ; Convert to binary
     
     ; Display the result
     mov rax, 1              ; sys_write
     mov rdi, 1              ; stdout
     mov rsi, result         ; result string
-    mov rdx, r10            ; length (from int_to_hex)
+    mov rdx, r10            ; length (from int_to_bin)
     syscall
     
     ; Add newline
