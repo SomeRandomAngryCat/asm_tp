@@ -1,8 +1,3 @@
-section .data
-    usage_msg db "Usage: ./prog <int1> <int2>", 10, 0
-    error_msg db "Erreur: paramètres invalides.", 10, 0
-    result_msg db "Résultat: %d", 10, 0
-
 section .text
     global main
     extern printf
