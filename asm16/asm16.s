@@ -16,12 +16,12 @@ _start:
     ; Ouvrir le fichier en lecture/écriture
     mov rax, 2                  ; sys_open
     mov rsi, 2                  ; O_RDWR
-    xor rdx, rdx                ; Mode (non utilisé pour O_RDWR)
+    xor rdx, rdx
     syscall
     
     ; Vérifier si l'ouverture a réussi
     test rax, rax
-    js error_file               ; Si erreur (négatif), sortir avec erreur
+    js error_file
     
     ; Sauvegarder le descripteur de fichier
     mov r12, rax
@@ -35,46 +35,57 @@ _start:
     
     ; Vérifier si la lecture a réussi
     test rax, rax
-    js error_file               ; Si erreur (négatif), sortir avec erreur
+    js error_file
     
     ; Sauvegarder la taille du fichier
     mov r13, rax
     
-    ; Parcourir tout le fichier pour trouver et remplacer "1337"
-    xor rcx, rcx                ; Initialiser l'index
-
+    ; Remplacer toutes les occurrences de "1337" par "H4CK"
+    xor rcx, rcx                ; Index de recherche
+    
 search_loop:
-    cmp rcx, r13                ; Vérifier si on a atteint la fin du fichier
-    jge not_found               ; Si oui, chaîne non trouvée
+    ; Vérifier si on a atteint la fin du fichier
+    cmp rcx, r13
+    jge no_more_replacements
     
-    ; Vérifier si on a trouvé '1'
+    ; Vérifier si nous avons trouvé un '1'
     cmp byte [buffer + rcx], '1'
-    jne next_byte
+    jne next_char
     
-    ; Vérifier s'il reste assez d'octets
+    ; Vérifier s'il reste assez d'octets pour "337"
     mov rax, rcx
-    add rax, 4                  ; Vérifier s'il y a assez d'espace pour "1337"
+    add rax, 4                  ; 1 (déjà trouvé) + 3 pour "337"
     cmp rax, r13
-    jg next_byte
+    jg next_char
     
-    ; Vérifier les caractères suivants
+    ; Vérifier les 3 caractères suivants
     cmp byte [buffer + rcx + 1], '3'
-    jne next_byte
+    jne next_char
     cmp byte [buffer + rcx + 2], '3'
-    jne next_byte
+    jne next_char
     cmp byte [buffer + rcx + 3], '7'
-    jne next_byte
+    jne next_char
     
-    ; Trouvé! Remplacer "1337" par "H4CK"
+    ; Trouvé! Remplacer par "H4CK"
     mov byte [buffer + rcx], 'H'
     mov byte [buffer + rcx + 1], '4'
     mov byte [buffer + rcx + 2], 'C'
     mov byte [buffer + rcx + 3], 'K'
     
-    ; Remettre le curseur au début du fichier
+    ; Passer aux 4 caractères suivants
+    add rcx, 4
+    jmp search_loop
+    
+next_char:
+    ; Passer au caractère suivant
+    inc rcx
+    jmp search_loop
+    
+no_more_replacements:
+    ; Repositionner le curseur de fichier au début
     mov rax, 8                  ; sys_lseek
-    mov rdi, r12                ; Descripteur de fichier
-    xor rsi, rsi                ; Offset 0
+    mov rdi, r12                ; descripteur de fichier
+    xor rsi, rsi                ; offset 0
     xor rdx, rdx                ; SEEK_SET (depuis le début)
     syscall
     
@@ -82,11 +93,11 @@ search_loop:
     test rax, rax
     js error_file
     
-    ; Écrire le buffer modifié dans le fichier
+    ; Écrire le buffer modifié
     mov rax, 1                  ; sys_write
-    mov rdi, r12                ; Descripteur de fichier
-    mov rsi, buffer             ; Buffer source
-    mov rdx, r13                ; Longueur du fichier
+    mov rdi, r12                ; descripteur de fichier
+    mov rsi, buffer             ; buffer source
+    mov rdx, r13                ; longueur
     syscall
     
     ; Vérifier si l'écriture a réussi
@@ -95,37 +106,22 @@ search_loop:
     
     ; Fermer le fichier
     mov rax, 3                  ; sys_close
-    mov rdi, r12                ; Descripteur de fichier
+    mov rdi, r12                ; descripteur de fichier
     syscall
     
     ; Sortir avec succès
     mov rax, 60                 ; sys_exit
-    xor rdi, rdi                ; Code 0 (succès)
-    syscall
-    
-next_byte:
-    inc rcx                     ; Passer au byte suivant
-    jmp search_loop
-
-not_found:
-    ; Fermer le fichier
-    mov rax, 3                  ; sys_close
-    mov rdi, r12                ; Descripteur de fichier
-    syscall
-    
-    ; Sortir avec erreur
-    mov rax, 60                 ; sys_exit
-    mov rdi, 1                  ; Code 1 (erreur)
+    xor rdi, rdi                ; code 0 (succès)
     syscall
     
 error_file:
     ; Erreur lors de l'accès au fichier
     mov rax, 60                 ; sys_exit
-    mov rdi, 1                  ; Code 1 (erreur)
+    mov rdi, 1                  ; code 1 (erreur)
     syscall
     
 error_args:
     ; Erreur: aucun nom de fichier fourni
     mov rax, 60                 ; sys_exit
-    mov rdi, 1                  ; Code 1 (erreur)
+    mov rdi, 1                  ; code 1 (erreur)
     syscall
