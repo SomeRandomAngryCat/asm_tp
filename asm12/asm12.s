@@ -33,8 +33,8 @@ _start:
     
 no_newline:
     ; Inverser la chaîne (r12 contient la longueur sans newline)
-    xor rcx, rcx             ; rcx = index source (0)
-    mov rdx, r12             ; rdx = index destination (longueur - 1)
+    xor rcx, rcx             ; rcx = index destination (0)
+    mov rdx, r12             ; rdx = index source (longueur)
     dec rdx                  ; Ajuster pour commencer à la fin
     
     ; Si la chaîne est vide après avoir retiré newline
@@ -43,18 +43,14 @@ no_newline:
     
 reverse_loop:
     ; Vérifier si nous avons terminé
-    cmp rcx, r12
-    jge reverse_done
+    cmp rdx, -1
+    je reverse_done
     
-    ; Vérifier si les indices se croisent
-    cmp rcx, rdx
-    jg reverse_done
+    ; Copier le caractère de la fin vers le début
+    mov al, byte [buffer + rdx]  ; Lire de la fin
+    mov byte [output + rcx], al  ; Écrire au début
     
-    ; Inverser les caractères
-    mov al, byte [buffer + rcx]  ; Charger caractère de la position source
-    mov byte [output + rdx], al  ; Stocker à la position destination
-    
-    ; Avancer source, reculer destination
+    ; Avancer destination, reculer source
     inc rcx
     dec rdx
     jmp reverse_loop
