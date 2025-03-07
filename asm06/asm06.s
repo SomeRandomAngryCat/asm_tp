@@ -1,201 +1,168 @@
 section .bss
-    buffer resb 20          ; Buffer for storing the result string
-
-section .data
-    error_msg db "Error: Requires exactly two numeric parameters", 10
-    error_len equ $ - error_msg
+    result_buffer resb 20   ; Buffer for result string
 
 section .text
     global _start
 
 _start:
-    ; Check if we have exactly 3 arguments (program name + 2 parameters)
+    ; Check if we have exactly 2 parameters
     pop rcx                 ; Get argc
-    cmp rcx, 3              ; Check if we have 3 arguments
-    jne parameter_error     ; If not, handle error
+    cmp rcx, 3              ; Program name + 2 parameters = 3
+    jne error_exit          ; If not 3, exit with error
     
-    ; Skip program name
-    pop rcx                 ; Skip argv[0]
+    pop rcx                 ; Skip program name (argv[0])
     
-    ; Get first parameter and convert to integer
-    pop rcx                 ; Get argv[1]
-    call atoi               ; Convert to integer
+    ; Get first number
+    pop rcx                 ; Get argv[1] (first number string)
+    call string_to_int
     push rax                ; Save first number
     
-    ; Get second parameter and convert to integer
-    pop rcx                 ; Get argv[2]
-    call atoi               ; Convert to integer
-    pop rbx                 ; Get first number from stack
+    ; Get second number
+    pop rcx                 ; Get argv[2] (second number string)
+    call string_to_int
+    pop rbx                 ; Retrieve first number
     
     ; Add the numbers
-    add rax, rbx            ; rax = rax + rbx
+    add rax, rbx
     
-    ; Convert the result to string for displaying
-    mov rdi, buffer
-    call itoa
+    ; Convert result to string
+    mov rsi, result_buffer
+    call int_to_string
     
     ; Display the result
-    mov rdx, rax            ; rax contains the length of result string
-    mov rax, 1              ; sys_write
-    mov rdi, 1              ; stdout
-    mov rsi, buffer         ; result string
+    mov rax, 1              ; sys_write syscall number
+    mov rdi, 1              ; stdout file descriptor
+    mov rsi, result_buffer  ; string to write
+    mov rdx, rcx            ; string length
     syscall
     
-    ; Display newline
-    mov byte [buffer], 10   ; newline character
-    mov rax, 1              ; sys_write
-    mov rdi, 1              ; stdout
-    mov rsi, buffer         ; string with newline
+    ; Add newline
+    mov byte [result_buffer], 10   ; Newline character
+    mov rax, 1              ; sys_write syscall number
+    mov rdi, 1              ; stdout file descriptor
+    mov rsi, result_buffer  ; string with newline
     mov rdx, 1              ; length 1
     syscall
     
-    ; Exit successfully
-    mov rax, 60             ; sys_exit
-    xor rdi, rdi            ; status 0
+    ; Exit with success
+    mov rax, 60             ; sys_exit syscall number
+    xor rdi, rdi            ; exit code 0
     syscall
 
-; Simple error handler
-parameter_error:
-    mov rax, 1              ; sys_write
-    mov rdi, 1              ; stdout
-    mov rsi, error_msg      ; error message
-    mov rdx, error_len      ; message length
-    syscall
-    
-    mov rax, 60             ; sys_exit
-    mov rdi, 1              ; status 1
+error_exit:
+    ; Exit with error
+    mov rax, 60             ; sys_exit syscall number
+    mov rdi, 1              ; exit code 1
     syscall
 
-; Convert ASCII string to integer
+; Convert string to integer
 ; Input: RCX = string address
-; Output: RAX = integer
-atoi:
-    push rbx
-    push rdx
-    push rsi
-    mov rsi, rcx            ; Move string pointer to RSI
+; Output: RAX = integer value
+string_to_int:
     xor rax, rax            ; Clear result
-    xor rbx, rbx            ; Clear sign flag
+    xor rdx, rdx            ; Clear sign flag (0 = positive)
     
-    ; Check for sign
-    mov dl, [rsi]
-    cmp dl, '-'
+    ; Check if first character is a minus sign
+    cmp byte [rcx], '-'
     jne .process_digits
-    mov rbx, 1              ; Set sign flag
-    inc rsi                 ; Skip sign
+    inc rcx                 ; Skip the minus sign
+    mov rdx, 1              ; Set sign flag
     
 .process_digits:
-    movzx rdx, byte [rsi]   ; Get character
-    test rdx, rdx           ; Check for null
-    jz .done
-    cmp rdx, '0'            ; Check if below '0'
-    jl .invalid
-    cmp rdx, '9'            ; Check if above '9'
-    jg .invalid
+    xor rbx, rbx            ; Clear temp
+    mov bl, [rcx]           ; Get current character
+    test bl, bl             ; Check for null terminator
+    jz .finalize
     
-    sub rdx, '0'            ; Convert to number
-    imul rax, 10            ; rax *= 10
-    add rax, rdx            ; rax += digit
+    sub bl, '0'             ; Convert from ASCII to numeric value
+    imul rax, 10            ; Multiply current result by 10
+    add rax, rbx            ; Add new digit
     
-    inc rsi                 ; Next character
+    inc rcx                 ; Move to next character
     jmp .process_digits
     
-.done:
-    test rbx, rbx           ; Check sign flag
-    jz .exit
+.finalize:
+    ; Apply sign if needed
+    test rdx, rdx
+    jz .done
     neg rax                 ; Negate if negative
     
-.exit:
-    pop rsi
-    pop rdx
-    pop rbx
+.done:
     ret
-    
-.invalid:
-    mov rax, 60             ; sys_exit
-    mov rdi, 2              ; status 2 - invalid number
-    syscall
 
-; Convert integer to ASCII string
-; Input: RAX = integer, RDI = output buffer
-; Output: RAX = length of string
-itoa:
+; Convert integer to string
+; Input: RAX = integer, RSI = buffer
+; Output: RCX = string length
+int_to_string:
     push rbx
-    push rcx
-    push rdx
-    push rdi
+    push rsi
     
-    mov rcx, rdi            ; Save buffer start
-    mov rbx, 10             ; Divisor
-    xor r8, r8              ; Length counter
+    xor rcx, rcx            ; Clear length counter
     
-    ; Handle negative numbers
+    ; Handle negative sign
     test rax, rax
-    jns .convert
+    jns .positive
     neg rax                 ; Make positive
-    mov byte [rdi], '-'     ; Add minus sign
-    inc rdi                 ; Move past sign
-    inc r8                  ; Increase length
+    mov byte [rsi], '-'     ; Add minus sign
+    inc rsi                 ; Move buffer position
+    inc rcx                 ; Increment length
     
-.convert:
+.positive:
+    mov rbx, 10             ; Divisor
+    
     ; Special case for 0
     test rax, rax
-    jnz .divide_loop
-    mov byte [rdi], '0'     ; Store '0'
-    inc rdi
-    inc r8
+    jnz .convert
+    mov byte [rsi], '0'     ; Store '0'
+    inc rsi                 ; Move buffer position
+    inc rcx                 ; Increment length
     jmp .done
     
-.divide_loop:
+.convert:
+    ; We'll build the string in reverse and then flip it
+    mov r8, rsi             ; Save start position
+    
+.convert_loop:
     test rax, rax
     jz .reverse
     
-    xor rdx, rdx            ; Clear for division
+    xor rdx, rdx
     div rbx                 ; Divide by 10
-    add dl, '0'             ; Convert to ASCII
-    mov [rdi], dl           ; Store digit
-    inc rdi                 ; Next position
-    inc r8                  ; Increase length
-    jmp .divide_loop
+    add dl, '0'             ; Convert remainder to ASCII
+    mov [rsi], dl           ; Store digit
+    inc rsi                 ; Move buffer position
+    inc rcx                 ; Increment length
+    jmp .convert_loop
     
 .reverse:
-    mov rdi, rcx            ; Reset to buffer start
+    mov r9, rcx             ; Save original length
+    mov r10, r8             ; Start of digits
     
-    ; Check if negative (has minus sign)
-    cmp byte [rdi], '-'
-    jne .setup_reverse
-    inc rdi                 ; Skip minus sign
+    ; Check for minus sign
+    cmp byte [r10], '-'
+    jne .start_reverse
+    inc r10                 ; Skip minus sign
+    dec r9                  ; Adjust length for reversal
     
-.setup_reverse:
-    mov rax, rdi            ; Start position (after minus sign if present)
-    mov rcx, r8             ; Total length
-    cmp byte [rdi-1], '-'   ; Check for minus sign
-    jne .continue_setup
-    dec rcx                 ; Adjust length for minus sign
-    
-.continue_setup:
-    add rdi, rcx            ; End position
-    dec rdi                 ; Adjust to last character
-    shr rcx, 1              ; Number of swaps = length/2
+.start_reverse:
+    dec rsi                 ; Last digit position
+    shr r9, 1               ; Half the length for swap count
     
 .reverse_loop:
-    test rcx, rcx
+    test r9, r9
     jz .done
     
-    mov bl, [rax]           ; Swap characters
-    mov dl, [rdi]
-    mov [rax], dl
-    mov [rdi], bl
+    mov dl, [r10]           ; Swap characters
+    mov bl, [rsi]
+    mov [r10], bl
+    mov [rsi], dl
     
-    inc rax                 ; Move start forward
-    dec rdi                 ; Move end backward
-    dec rcx                 ; Counter--
+    inc r10                 ; Move start forward
+    dec rsi                 ; Move end backward
+    dec r9                  ; Decrement counter
     jmp .reverse_loop
     
 .done:
-    mov rax, r8             ; Return length
-    pop rdi
-    pop rdx
-    pop rcx
+    pop rsi                 ; Restore original buffer address
     pop rbx
     ret
