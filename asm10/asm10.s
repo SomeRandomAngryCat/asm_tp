@@ -15,15 +15,15 @@ _start:
     ; Get first number
     pop rdi                 ; Get first argument string
     call string_to_int      ; Convert to integer
-    cmp rax, -1             ; Check for conversion error
-    je input_error          ; If error, handle it
+    cmp rdx, 0              ; Check for conversion error
+    jne input_error         ; If error, handle it
     mov r12, rax            ; Store first number in r12 (current max)
     
     ; Get second number
     pop rdi                 ; Get second argument string
     call string_to_int      ; Convert to integer
-    cmp rax, -1             ; Check for conversion error
-    je input_error          ; If error, handle it
+    cmp rdx, 0              ; Check for conversion error
+    jne input_error         ; If error, handle it
     
     ; Compare with current max (r12)
     cmp rax, r12            ; Compare with current max
@@ -34,8 +34,8 @@ skip_second:
     ; Get third number
     pop rdi                 ; Get third argument string
     call string_to_int      ; Convert to integer
-    cmp rax, -1             ; Check for conversion error
-    je input_error          ; If error, handle it
+    cmp rdx, 0              ; Check for conversion error
+    jne input_error         ; If error, handle it
     
     ; Compare with current max (r12)
     cmp rax, r12            ; Compare with current max
@@ -83,11 +83,11 @@ input_error:
 
 ; Convert string to integer
 ; Input: RDI = string address
-; Output: RAX = integer or -1 if error
+; Output: RAX = integer, RDX = 0 if successful, 1 if error
 string_to_int:
     xor rax, rax            ; Clear result
     xor r8, r8              ; Clear sign flag (0 = positive)
-    xor rcx, rcx            ; Clear digit counter
+    xor rdx, rdx            ; Clear error flag
     
     ; Check for empty string
     cmp byte [rdi], 0
@@ -107,45 +107,45 @@ string_to_int:
     
 .validate_first:
     ; Ensure first character is a digit
-    movzx rdx, byte [rdi]
-    cmp rdx, 0              ; Check for end of string
-    je .error               ; Error if no digits
-    cmp rdx, '0'
+    movzx rcx, byte [rdi]
+    test rcx, rcx           ; Check for end of string
+    jz .error               ; Error if no digits
+    cmp rcx, '0'
     jl .error               ; Error if below '0'
-    cmp rdx, '9'
+    cmp rcx, '9'
     jg .error               ; Error if above '9'
     
 .convert:
-    movzx rdx, byte [rdi]   ; Get current character
-    cmp rdx, 0              ; Check for end of string
-    je .finish
+    movzx rcx, byte [rdi]   ; Get current character
+    test rcx, rcx           ; Check for end of string
+    jz .finish
     
     ; Validate digit
-    cmp rdx, '0'
+    cmp rcx, '0'
     jl .error               ; Error if not a digit
-    cmp rdx, '9'
+    cmp rcx, '9'
     jg .error
     
     ; Convert digit
-    sub rdx, '0'            ; Convert ASCII to digit
+    sub rcx, '0'            ; Convert ASCII to digit
     imul rax, 10            ; Multiply current result by 10
-    add rax, rdx            ; Add new digit
+    add rax, rcx            ; Add new digit
     
     inc rdi                 ; Move to next character
-    inc rcx                 ; Increment digit counter
     jmp .convert
     
 .finish:
     ; Apply sign if needed
-    cmp r8, 1
-    jne .success
+    test r8, r8
+    jz .success
     neg rax                 ; Negate result if negative
     
 .success:
+    xor rdx, rdx            ; No error
     ret                     ; Return integer in RAX
     
 .error:
-    mov rax, -1             ; Return error code
+    mov rdx, 1              ; Set error flag
     ret
 
 ; Convert integer to string
@@ -155,92 +155,85 @@ int_to_string:
     push rbx                ; Save registers
     push rcx
     push rdx
+    push r8
+    push r9
     
-    mov rcx, rdi            ; Save buffer start
-    mov rbx, 10             ; Divisor
+    mov r8, rdi             ; Save buffer start
+    xor r9, r9              ; Initialize length counter
     
     ; Handle negative numbers
-    cmp rax, 0
-    jge .positive
+    test rax, rax
+    jns .positive
     
     neg rax                 ; Make positive
     mov byte [rdi], '-'     ; Store minus sign
     inc rdi                 ; Move past sign
+    inc r9                  ; Include sign in length
     
 .positive:
-    mov r9, 0               ; Digit counter
-    
-    ; Handle special case for 0
-    cmp rax, 0
-    jne .convert
+    ; Special case for 0
+    test rax, rax
+    jnz .convert
     
     mov byte [rdi], '0'     ; Store '0'
-    inc rdi                 ; Move to next position
-    inc r9                  ; Increment counter
+    inc rdi                 ; Move buffer position
+    inc r9                  ; Increment length
     jmp .done
     
 .convert:
-    ; Convert each digit in reverse order
-    mov r10, rdi            ; Save current position
+    mov rbx, rdi            ; Save start of digit area
     
+    ; Convert digits (in reverse order)
 .convert_loop:
-    cmp rax, 0
-    je .reverse
+    test rax, rax
+    jz .reverse
     
     xor rdx, rdx            ; Clear for division
-    div rbx                 ; Divide by 10
+    mov rcx, 10             ; Divisor
+    div rcx                 ; Divide by 10
     
     add dl, '0'             ; Convert remainder to ASCII
     mov [rdi], dl           ; Store digit
-    inc rdi                 ; Move to next position
-    inc r9                  ; Increment counter
+    inc rdi                 ; Next buffer position
+    inc r9                  ; Increment length
     
     jmp .convert_loop
     
 .reverse:
-    ; Number of digits is in r9
-    ; If negative, adjust buffer position
-    cmp byte [rcx], '-'
-    jne .setup_reverse
+    ; Now we need to reverse the digits (not including sign)
+    mov rcx, rdi            ; End position + 1
+    dec rcx                 ; Adjust to end position
     
-    inc rcx                 ; Skip minus sign
-    dec r9                  ; Adjust count
+    ; If we have a negative sign, adjust the start position
+    cmp byte [r8], '-'
+    jne .reverse_setup
+    inc rbx                 ; Skip the sign for reversal
     
-.setup_reverse:
-    mov rdi, rcx            ; Start position
-    mov rsi, rcx
-    add rsi, r9
-    dec rsi                 ; End position
-    
-    shr r9, 1               ; Half the count for swapping
+.reverse_setup:
+    mov rdx, rcx            ; End position
+    sub rdx, rbx            ; Calculate number of digits - 1
+    shr rdx, 1              ; Divide by 2 (for pairs to swap)
+    inc rdx                 ; Adjust count
     
 .reverse_loop:
-    cmp r9, 0
-    je .restore
+    dec rdx                 ; Decrement counter
+    jz .done                ; Done when counter is 0
     
-    mov al, [rdi]           ; Swap characters
-    mov bl, [rsi]
-    mov [rdi], bl
-    mov [rsi], al
+    mov al, [rbx]           ; Get start character
+    mov ah, [rcx]           ; Get end character
+    mov [rbx], ah           ; Swap characters
+    mov [rcx], al
     
-    inc rdi                 ; Move start forward
-    dec rsi                 ; Move end backward
-    dec r9                  ; Decrement counter
+    inc rbx                 ; Move start forward
+    dec rcx                 ; Move end backward
     jmp .reverse_loop
     
-.restore:
-    ; Check if the number was negative
-    cmp byte [rcx-1], '-'
-    jne .compute_length
-    dec rcx                 ; Move back to include minus sign
-    
-.compute_length:
-    mov rax, r10            ; Current buffer position
-    sub rax, rcx            ; Calculate length
-    inc rax                 ; Adjust for current position
-    
 .done:
-    pop rdx                 ; Restore registers
+    mov rax, r9             ; Return length
+    
+    pop r9                  ; Restore registers
+    pop r8
+    pop rdx
     pop rcx
     pop rbx
     ret
