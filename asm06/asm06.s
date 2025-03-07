@@ -8,7 +8,7 @@ section .text
     extern printf
     extern atoi
 
-main:
+global _start:
     push rbp
     mov rbp, rsp
 
