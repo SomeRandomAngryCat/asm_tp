@@ -21,16 +21,10 @@ _start:
 
     mov rdi, rax            ; sauvegarde fd dans rdi
 
-    ; Déplace offset au bon endroit (sys_lseek)
-    mov rax, 8              ; sys_lseek
-    mov rsi, 0              ; offset initial
-    mov rdx, 0              ; SEEK_SET
-    syscall
-
-    ; Lecture des données pour trouver la chaîne à remplacer ("1337")
+    ; Lire le fichier entier
     mov rax, 0              ; sys_read
     mov rsi, rsp            ; buffer temporaire
-    mov rdx, 4096           ; lecture de 4K max
+    mov rdx, 8192           ; lecture de 8K max (suffisant pour ELF standard)
     syscall
 
     mov rcx, rax            ; taille lue dans rcx
