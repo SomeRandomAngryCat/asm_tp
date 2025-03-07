@@ -21,6 +21,12 @@ _start:
 
     mov rdi, rax            ; sauvegarde fd dans rdi
 
+    ; Remet explicitement offset à 0 (début du fichier)
+    mov rax, 8              ; sys_lseek
+    xor rsi, rsi            ; offset 0
+    xor rdx, rdx            ; SEEK_SET
+    syscall
+
     ; Lire le fichier entier
     mov rax, 0              ; sys_read
     mov rsi, rsp            ; buffer temporaire
