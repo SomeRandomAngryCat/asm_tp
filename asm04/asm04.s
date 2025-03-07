@@ -56,7 +56,7 @@ even_number:
     syscall
     
 invalid_input:
-    ; Invalid input - return 1
+    ; Invalid input - return 2 (changed from 1 to match requirements)
     mov rax, 60             ; syscall number for sys_exit
-    mov rdi, 1              ; exit with status code 1
+    mov rdi, 2              ; exit with status code 2
     syscall
