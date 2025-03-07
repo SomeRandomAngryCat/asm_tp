@@ -121,13 +121,15 @@ brute_force:
     jge no_string_found
     
     ; Les segments de section .data sont généralement alignés, chercher des motifs potentiels
-    mov al, byte [buffer + rcx]
+    mov al, [buffer + rcx]      ; Corrigé: retiré 'byte'
     cmp al, 0
     jne next_brute_force
     
     ; Vérifier si nous avons 4 octets non nuls après un octet nul
     ; Ce motif est typique des chaînes dans la section .data
-    cmp rcx + 5, r13  ; S'assurer qu'il reste assez d'octets
+    mov rax, rcx                ; Corrigé: calcul d'adresse
+    add rax, 5
+    cmp rax, r13                ; S'assurer qu'il reste assez d'octets
     jge next_brute_force
     
     ; Vérifier s'il y a au moins un octet non nul suivi par 3 autres octets
@@ -187,12 +189,14 @@ last_attempt:
     cmp rcx, 512
     jge close_and_fail
     
-    mov al, byte [buffer + rcx]
+    mov al, [buffer + rcx]      ; Corrigé: retiré 'byte'
     cmp al, '1'
     jne continue_last
     
     ; Vérifier les 3 octets suivants
-    cmp rcx + 3, r13
+    mov rax, rcx                ; Corrigé: calcul d'adresse
+    add rax, 3
+    cmp rax, r13                ; Vérifier qu'il reste assez d'octets
     jge continue_last
     
     cmp byte [buffer + rcx + 1], '3'
