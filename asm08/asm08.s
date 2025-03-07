@@ -1,24 +1,19 @@
 section .bss
-    buffer resb 32          ; Buffer for reading input
     result resb 32          ; Buffer for storing result string
 
 section .text
     global _start
 
 _start:
-    ; Read input number
-    mov rax, 0              ; sys_read
-    mov rdi, 0              ; stdin
-    mov rsi, buffer         ; buffer address
-    mov rdx, 32             ; buffer size
-    syscall
+    ; Check if we have exactly 2 arguments (program name + parameter)
+    pop rax                 ; Get argc
+    cmp rax, 2              ; Check for 2 arguments
+    jne param_error         ; If not 2, handle error
     
-    ; Check if read was successful
-    test rax, rax
-    jle input_error         ; Error or EOF
+    pop rax                 ; Skip argv[0] (program name)
     
-    ; Convert string to integer
-    mov rdi, buffer         ; Set buffer address
+    ; Get parameter
+    pop rdi                 ; Get argv[1] (parameter string)
     call atoi               ; Convert to integer
     
     ; Check for conversion error
@@ -56,8 +51,8 @@ _start:
     xor rdi, rdi            ; exit code 0
     syscall
 
-input_error:
-    ; Exit with error code 1 (read error)
+param_error:
+    ; Exit with error code 1 (parameter error)
     mov rax, 60             ; sys_exit
     mov rdi, 1              ; error code 1
     syscall
@@ -75,24 +70,6 @@ atoi:
     xor rax, rax            ; Initialize result
     xor rcx, rcx            ; Initialize sign flag
     
-    ; Skip whitespace
-.skip_whitespace:
-    movzx rdx, byte [rdi]   ; Get current character
-    cmp rdx, ' '            ; Check for space
-    je .next_whitespace
-    cmp rdx, 9              ; Check for tab
-    je .next_whitespace
-    cmp rdx, 10             ; Check for newline
-    je .next_whitespace
-    cmp rdx, 13             ; Check for carriage return
-    je .next_whitespace
-    jmp .check_sign
-    
-.next_whitespace:
-    inc rdi                 ; Next character
-    jmp .skip_whitespace
-    
-.check_sign:
     ; Check for minus sign
     cmp byte [rdi], '-'
     jne .check_plus
@@ -109,6 +86,8 @@ atoi:
 .check_digits:
     ; Ensure we have at least one digit
     movzx rdx, byte [rdi]   ; Get current character
+    test rdx, rdx           ; Check for end of string
+    jz .error               ; Error if empty string
     cmp rdx, '0'            ; Check if below '0'
     jl .error
     cmp rdx, '9'            ; Check if above '9'
@@ -117,13 +96,9 @@ atoi:
 .digits:
     movzx rdx, byte [rdi]   ; Get current character
     
-    ; Check for end of string or non-digit
-    cmp rdx, 0              ; Check for null terminator
-    je .done
-    cmp rdx, 10             ; Check for newline
-    je .done
-    cmp rdx, 13             ; Check for carriage return
-    je .done
+    ; Check for end of string
+    test rdx, rdx           ; Check for null terminator
+    jz .done
     
     ; Validate digit
     cmp rdx, '0'            ; Check if below '0'
@@ -140,34 +115,13 @@ atoi:
     jmp .digits
     
 .done:
-    ; Check for more characters after end of number
-    cmp byte [rdi], 0       ; Check for null
-    je .apply_sign
-    cmp byte [rdi], 10      ; Check for newline
-    je .apply_sign
-    cmp byte [rdi], 13      ; Check for carriage return
-    je .apply_sign
-    
-    ; If there are any non-whitespace characters, it's an error
-    movzx rdx, byte [rdi]   ; Get current character
-    cmp rdx, ' '            ; Check for space
-    je .next_trailing
-    cmp rdx, 9              ; Check for tab
-    je .next_trailing
-    jmp .error
-    
-.next_trailing:
-    inc rdi                 ; Next character
-    jmp .done
-    
-.apply_sign:
     ; Handle sign
     test rcx, rcx
     jz .validate
     neg rax                 ; Negate if negative
     
 .validate:
-    ; Validate number is positive
+    ; Validate number is non-negative
     test rax, rax
     js .error
     ret
@@ -189,6 +143,7 @@ sum_below:
     dec rax                 ; n-1
     mul r12                 ; (n-1) * n
     mov rcx, 2
+    xor rdx, rdx            ; Clear high bits for division
     div rcx                 ; (n-1) * n / 2
     ret
     
