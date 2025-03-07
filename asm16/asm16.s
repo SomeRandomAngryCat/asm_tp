@@ -1,121 +1,136 @@
-
-global _start
-section .bss
-    buffer resb 4096    ; Buffer pour stocker le fichier lu
 section .data
-    error_msg db "Erreur: impossible de trouver ou modifier le fichier", 10
-    error_len equ $ - error_msg
-    success_msg db "Patching réussi", 10
-    success_len equ $ - success_msg
-    new_str db "H4CK"    ; Nouvelle chaîne pour remplacer "1337"
-    target_str db "1337" ; Chaîne à rechercher
+    new_string db "H4CK", 0      ; Nouvelle chaîne à insérer
+
+section .bss
+    buffer resb 4096             ; Buffer pour stocker le contenu du fichier
 
 section .text
+    global _start
+
 _start:
-    pop rax             ; Nombre d'arguments (argc)
-    cmp rax, 2          ; Doit être 2 (programme + fichier)
-    jne error_exit      ; Sinon, erreur
-
-    pop rdi             ; Ignorer le nom du programme
-    pop rdi             ; Charger le nom du fichier (argv[1])
-
-
-    mov rax, 2          ; sys_open
-    mov rsi, 2          ; O_RDWR (lecture + écriture)
-    mov rdx, 0666o      ; Permissions (lecture + écriture)
+    ; Vérifier si un nom de fichier a été fourni
+    pop rcx                     ; Récupérer argc
+    cmp rcx, 2                  ; Vérifier qu'on a un argument
+    jl error_args               ; Si moins de 2 arguments, erreur
+    
+    pop rdi                     ; Ignorer argv[0] (nom du programme)
+    pop rdi                     ; Récupérer argv[1] (nom du fichier asm01)
+    
+    ; Ouvrir le fichier en lecture/écriture
+    mov rax, 2                  ; sys_open
+    mov rsi, 2                  ; O_RDWR
+    xor rdx, rdx                ; Mode (non utilisé pour O_RDWR)
     syscall
-
-
+    
+    ; Vérifier si l'ouverture a réussi
     test rax, rax
-    js error_exit       ; Si erreur, afficher message et quitter
-    mov r15, rax        ; Sauvegarder le descripteur de fichier
-
-
-    mov rax, 0          ; sys_read
-    mov rdi, r15        ; Descripteur de fichier
-    mov rsi, buffer     ; Stocker le contenu dans buffer
-    mov rdx, 4096       ; Lire max 4096 octets
+    js error_file               ; Si erreur (négatif), sortir avec erreur
+    
+    ; Sauvegarder le descripteur de fichier
+    mov r12, rax
+    
+    ; Lire le contenu du fichier
+    mov rax, 0                  ; sys_read
+    mov rdi, r12                ; Descripteur de fichier
+    mov rsi, buffer             ; Buffer de destination
+    mov rdx, 4096               ; Nombre maximal d'octets à lire
     syscall
-
-
+    
+    ; Vérifier si la lecture a réussi
     test rax, rax
-    js close_and_error  ; Si erreur, fermer et quitter
-
-    mov r14, rax        ; Taille du fichier lue
-    mov r12, 0          ; Position dans le buffer
-
+    js error_file               ; Si erreur (négatif), sortir avec erreur
+    
+    ; Stocker la taille du fichier
+    mov r13, rax
+    
+    ; Chercher la chaîne "1337" dans le buffer
+    mov rcx, 0                  ; Initialiser l'index
+    
 search_loop:
+    ; Vérifier si on est arrivé à la fin du buffer
+    cmp rcx, r13
+    jge not_found               ; Si fin du buffer, chaîne non trouvée
+    
+    ; Vérifier le premier caractère ('1')
+    mov al, byte [buffer + rcx]
+    cmp al, '1'
+    jne next_char
 
-    cmp r12, r14
-    jge close_and_error  ; Si on a atteint la fin sans trouver, erreur
-
-    ; Comparer avec "1337"
-    lea rsi, [buffer + r12]  ; Position actuelle dans le buffer
-    cmp dword [rsi], 0x37333331  ; "1337" en little-endian
-    jne next_byte
-
-    ; Remplacer par "H4CK"
-    mov dword [rsi], 0x4B434834  ; "H4CK" en little-endian
-
-    ; Repositionner au début du fichier
-    mov rax, 8          ; sys_lseek
-    mov rdi, r15        ; Descripteur de fichier
-    mov rsi, 0          ; Offset au début
-    mov rdx, 0          ; SEEK_SET
+    ; Vérifier s'il reste assez d'espace pour "337"
+    mov rdx, r13
+    sub rdx, rcx
+    cmp rdx, 4                  ; On a besoin d'au moins 4 octets
+    jl next_char
+    
+    ; Vérifier les 3 caractères suivants
+    cmp byte [buffer + rcx + 1], '3'
+    jne next_char
+    cmp byte [buffer + rcx + 2], '3'
+    jne next_char
+    cmp byte [buffer + rcx + 3], '7'
+    jne next_char
+    
+    ; Trouvé! Remplacer la chaîne
+    mov byte [buffer + rcx], 'H'
+    mov byte [buffer + rcx + 1], '4'
+    mov byte [buffer + rcx + 2], 'C'
+    mov byte [buffer + rcx + 3], 'K'
+    
+    ; Écrire le buffer modifié dans le fichier
+    mov rax, 8                  ; sys_lseek
+    mov rdi, r12                ; Descripteur de fichier
+    xor rsi, rsi                ; Offset 0
+    xor rdx, rdx                ; SEEK_SET (depuis le début)
     syscall
-
-    ; Vérifier si le positionnement a réussi
+    
+    ; Vérifier si lseek a réussi
     test rax, rax
-    js close_and_error  ; Si erreur, fermer et sortir
-
+    js error_file
+    
     ; Écrire le buffer modifié
-    mov rax, 1          ; sys_write
-    mov rdi, r15        ; Descripteur de fichier
-    mov rsi, buffer     ; Contenu modifié
-    mov rdx, r14        ; Taille du fichier
+    mov rax, 1                  ; sys_write
+    mov rdi, r12                ; Descripteur de fichier
+    mov rsi, buffer             ; Buffer modifié
+    mov rdx, r13                ; Taille du fichier
     syscall
-
-    ; Afficher le message de succès
-    mov rax, 1          ; sys_write
-    mov rdi, 1          ; stdout
-    mov rsi, success_msg
-    mov rdx, success_len
+    
+    ; Vérifier si l'écriture a réussi
+    cmp rax, r13
+    jne error_file
+    
+    ; Fermer le fichier
+    mov rax, 3                  ; sys_close
+    mov rdi, r12                ; Descripteur de fichier
     syscall
-
-    jmp close_and_exit  ; Tout s'est bien passé
-
-next_byte:
-    inc r12             ; Passer au prochain octet
-    jmp search_loop     ; Continuer la recherche
-
-error_exit:
-    ; Afficher un message d'erreur
-    mov rax, 1          ; sys_write
-    mov rdi, 1          ; stdout
-    mov rsi, error_msg
-    mov rdx, error_len
+    
+    ; Succès
+    mov rax, 60                 ; sys_exit
+    xor rdi, rdi                ; Code 0 (succès)
     syscall
-
-    ; Quitter avec erreur
-    mov rax, 60         ; sys_exit
-    mov rdi, 1          ; Code de sortie 1 (erreur)
+    
+next_char:
+    inc rcx                     ; Passer au caractère suivant
+    jmp search_loop
+    
+not_found:
+    ; Si la chaîne n'est pas trouvée, fermer le fichier et sortir avec erreur
+    mov rax, 3                  ; sys_close
+    mov rdi, r12                ; Descripteur de fichier
     syscall
-
-close_and_error:
-    ; Fermer le fichier avant de quitter en erreur
-    mov rax, 3          ; sys_close
-    mov rdi, r15
+    
+    ; Sortir avec erreur
+    mov rax, 60                 ; sys_exit
+    mov rdi, 1                  ; Code 1 (erreur)
     syscall
-
-    jmp error_exit
-
-close_and_exit:
-    ; Fermer le fichier avant de quitter proprement
-    mov rax, 3          ; sys_close
-    mov rdi, r15
+    
+error_file:
+    ; Erreur lors de l'accès au fichier
+    mov rax, 60                 ; sys_exit
+    mov rdi, 1                  ; Code 1 (erreur)
     syscall
-
-    ; Quitter avec succès
-    mov rax, 60         ; sys_exit
-    xor rdi, rdi        ; Code de sortie 0 (succès)
+    
+error_args:
+    ; Erreur: aucun nom de fichier fourni
+    mov rax, 60                 ; sys_exit
+    mov rdi, 1                  ; Code 1 (erreur)
     syscall
