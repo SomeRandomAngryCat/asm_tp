@@ -1,6 +1,9 @@
 section .data
     patch db "H4CK"
 
+section .bss
+    buffer resb 8192
+
 section .text
     global _start
 
@@ -27,14 +30,14 @@ _start:
     xor rdx, rdx            ; SEEK_SET
     syscall
 
-    ; Lire le fichier entier
+    ; Lire le fichier entier dans buffer
     mov rax, 0              ; sys_read
-    mov rsi, rsp            ; buffer temporaire
-    mov rdx, 8192           ; lecture de 8K max (suffisant pour ELF standard)
+    mov rsi, buffer         ; buffer temporaire
+    mov rdx, 8192           ; lecture de 8K max
     syscall
 
     mov rcx, rax            ; taille lue dans rcx
-    mov rsi, rsp            ; pointeur vers buffer
+    mov rsi, buffer         ; pointeur vers buffer
     xor rbx, rbx
 
 find_loop:
