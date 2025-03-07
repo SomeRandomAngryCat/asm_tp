@@ -146,9 +146,16 @@ atoi:
     neg rax                 ; Negate if negative
     
 .validate:
-    ; Check for valid prime number (>=2)
+    ; 1 is not prime but it is a valid input
+    cmp rax, 1
+    je .valid_one
+    ; Check if number is valid (>=2 for proper primality test)
     cmp rax, 2
     jl .error
+    ret
+    
+.valid_one:
+    ; 1 is a valid input, return it
     ret
     
 .error:
@@ -160,6 +167,8 @@ atoi:
 ; Output: RAX = 0 if prime, 1 if not prime
 is_prime:
     ; Handle special cases
+    cmp r12, 1              ; 1 is not prime
+    je .not_prime
     cmp r12, 2              ; 2 is prime
     je .is_prime
     cmp r12, 3              ; 3 is prime
