@@ -1,7 +1,3 @@
-section .data
-    new_string db "H4CK", 10    ; Nouvelle chaîne à insérer (avec saut de ligne)
-    new_len equ $ - new_string  ; Longueur de la nouvelle chaîne
-
 section .bss
     buffer resb 4096            ; Buffer pour stocker le contenu du fichier
     file_size resq 1            ; Variable pour stocker la taille du fichier
@@ -21,11 +17,11 @@ _start:
     ; Sauvegarder le nom du fichier
     mov r15, rdi                ; Garder le nom du fichier dans r15
     
-    ; Ouvrir le fichier en lecture
+    ; Ouvrir le fichier en lecture/écriture
     mov rax, 2                  ; sys_open
     ; rdi contient déjà le nom du fichier
-    mov rsi, 0                  ; O_RDONLY
-    xor rdx, rdx                ; Mode (non utilisé pour O_RDONLY)
+    mov rsi, 2                  ; O_RDWR
+    xor rdx, rdx                ; Mode (non utilisé pour O_RDWR)
     syscall
     
     ; Vérifier si l'ouverture a réussi
@@ -49,71 +45,91 @@ _start:
     ; Sauvegarder la taille du fichier
     mov [file_size], rax
     
-    ; Fermer le fichier
-    mov rax, 3                  ; sys_close
-    mov rdi, r12                ; Descripteur de fichier
-    syscall
-    
-    ; Chercher "1337" dans le contenu du fichier
-    mov rsi, buffer             ; Pointeur vers le contenu du fichier
-    mov rcx, [file_size]        ; Taille du fichier
+    ; Chercher "1337" dans le contenu du fichier (en tenant compte des formats possibles)
+    xor r13, r13                ; Index de recherche
+    mov r14, [file_size]        ; Taille du fichier
     
 find_pattern:
     ; Vérifier si on a atteint la fin du fichier
-    test rcx, rcx
-    jz not_found                ; Si fin du fichier, pattern non trouvé
+    cmp r13, r14
+    jge not_found               ; Si fin du fichier, pattern non trouvé
     
-    ; Vérifier le premier caractère
-    cmp byte [rsi], '1'
-    jne next_char
+    ; Vérifier si nous avons trouvé la chaîne potentielle
+    ; Plusieurs possibilités de stockage: ASCII direct, Unicode, etc.
     
-    ; Vérifier si on a assez de caractères restants
-    cmp rcx, 4                  ; Besoin d'au moins 4 caractères ("1337")
-    jl next_char
+    ; Vérifier le format ASCII direct "1337"
+    cmp byte [buffer + r13], '1'
+    jne check_next_format1
+    cmp byte [buffer + r13 + 1], '3'
+    jne check_next_format1
+    cmp byte [buffer + r13 + 2], '3'
+    jne check_next_format1
+    cmp byte [buffer + r13 + 3], '7'
+    jne check_next_format1
     
-    ; Vérifier les caractères suivants
-    cmp byte [rsi+1], '3'
-    jne next_char
-    cmp byte [rsi+2], '3'
-    jne next_char
-    cmp byte [rsi+3], '7'
-    jne next_char
+    ; Trouvé en ASCII, remplacer par "H4CK"
+    mov byte [buffer + r13], 'H'
+    mov byte [buffer + r13 + 1], '4'
+    mov byte [buffer + r13 + 2], 'C'
+    mov byte [buffer + r13 + 3], 'K'
+    jmp pattern_found
     
-    ; Pattern trouvé, remplacer par "H4CK"
-    mov byte [rsi], 'H'
-    mov byte [rsi+1], '4'
-    mov byte [rsi+2], 'C'
-    mov byte [rsi+3], 'K'
+check_next_format1:
+    ; Vérifier le format ASCII avec caractère nul entre chaque caractère (UTF-16LE)
+    cmp r13, r14
+    ja next_index
+    cmp byte [buffer + r13], '1'
+    jne check_next_format2
+    cmp r13 + 2, r14
+    ja next_index
+    cmp byte [buffer + r13 + 2], '3'
+    jne check_next_format2
+    cmp r13 + 4, r14
+    ja next_index
+    cmp byte [buffer + r13 + 4], '3'
+    jne check_next_format2
+    cmp r13 + 6, r14
+    ja next_index
+    cmp byte [buffer + r13 + 6], '7'
+    jne check_next_format2
     
-    ; Sauter à l'étape d'écriture du fichier modifié
-    jmp write_file
+    ; Trouvé en UTF-16LE, remplacer par "H4CK"
+    mov byte [buffer + r13], 'H'
+    mov byte [buffer + r13 + 2], '4'
+    mov byte [buffer + r13 + 4], 'C'
+    mov byte [buffer + r13 + 6], 'K'
+    jmp pattern_found
     
-next_char:
+check_next_format2:
+    ; Vérifier le format hexadécimal possible (31 33 33 37)
+    cmp byte [buffer + r13], 0x31
+    jne next_index
+    cmp byte [buffer + r13 + 1], 0x33
+    jne next_index
+    cmp byte [buffer + r13 + 2], 0x33
+    jne next_index
+    cmp byte [buffer + r13 + 3], 0x37
+    jne next_index
+    
+    ; Trouvé en hexadécimal, remplacer par "H4CK"
+    mov byte [buffer + r13], 0x48   ; 'H'
+    mov byte [buffer + r13 + 1], 0x34   ; '4'
+    mov byte [buffer + r13 + 2], 0x43   ; 'C'
+    mov byte [buffer + r13 + 3], 0x4B   ; 'K'
+    jmp pattern_found
+    
+next_index:
     ; Passer au caractère suivant
-    inc rsi
-    dec rcx
+    inc r13
     jmp find_pattern
     
-not_found:
-    ; Pattern non trouvé, sortir avec erreur
-    mov rax, 60                 ; sys_exit
-    mov rdi, 1                  ; code 1 (erreur)
+pattern_found:
+    ; Repositionner le curseur au début du fichier
+    mov rax, 8                  ; sys_lseek
+    mov rdi, r12                ; Descripteur de fichier
+    xor rsi, rsi                ; Offset 0
+    xor rdx, rdx                ; SEEK_SET (depuis le début)
     syscall
-    
-write_file:
-    ; Ouvrir le fichier en écriture
-    mov rax, 2                  ; sys_open
-    mov rdi, r15                ; Nom du fichier (sauvegardé dans r15)
-    mov rsi, 0102o              ; O_WRONLY | O_CREAT
-    mov rdx, 0755o              ; Permissions (rwxr-xr-x)
-    syscall
-    
-    ; Vérifier si l'ouverture a réussi
-    test rax, rax
-    js error_file               ; Si erreur (négatif), sortir avec erreur
-    
-    ; Sauvegarder le descripteur de fichier
-    mov r12, rax
     
     ; Écrire le contenu modifié
     mov rax, 1                  ; sys_write
@@ -123,8 +139,8 @@ write_file:
     syscall
     
     ; Vérifier si l'écriture a réussi
-    test rax, rax
-    js error_file               ; Si erreur (négatif), sortir avec erreur
+    cmp rax, [file_size]
+    jne error_file              ; Si on n'a pas écrit tous les octets, erreur
     
     ; Fermer le fichier
     mov rax, 3                  ; sys_close
@@ -134,6 +150,17 @@ write_file:
     ; Succès, sortir avec code 0
     mov rax, 60                 ; sys_exit
     xor rdi, rdi                ; code 0 (succès)
+    syscall
+    
+not_found:
+    ; Fermer le fichier si ouvert
+    mov rax, 3                  ; sys_close
+    mov rdi, r12                ; Descripteur de fichier
+    syscall
+    
+    ; Pattern non trouvé, sortir avec erreur
+    mov rax, 60                 ; sys_exit
+    mov rdi, 1                  ; code 1 (erreur)
     syscall
     
 error_file:
