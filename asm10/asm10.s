@@ -1,239 +1,179 @@
 section .bss
-    result_buffer resb 32   ; Buffer for storing result as string
+    buffer resb 32          ; Buffer for result string
 
 section .text
     global _start
 
 _start:
-    ; Check if we have exactly 3 arguments
+    ; Check argument count
     pop rcx                 ; Get argc
     cmp rcx, 4              ; Program name + 3 parameters = 4
     jne argument_error      ; If not 4, handle error
     
-    pop rcx                 ; Skip program name (argv[0])
+    pop rcx                 ; Skip program name
     
     ; Get first number
-    pop rdi                 ; Get first argument string
-    call string_to_int      ; Convert to integer
-    cmp rdx, 0              ; Check for conversion error
-    jne input_error         ; If error, handle it
-    mov r12, rax            ; Store first number in r12 (current max)
+    pop rdi                 ; Get first argument
+    call atoi
+    mov r12, rax            ; Store first number as current max
     
     ; Get second number
-    pop rdi                 ; Get second argument string
-    call string_to_int      ; Convert to integer
-    cmp rdx, 0              ; Check for conversion error
-    jne input_error         ; If error, handle it
+    pop rdi                 ; Get second argument
+    call atoi
     
-    ; Compare with current max (r12)
-    cmp rax, r12            ; Compare with current max
-    jle skip_second         ; If second <= first, skip update
+    ; Compare with current max
+    cmp rax, r12
+    jle check_third         ; If second <= max, skip update
     mov r12, rax            ; Update max
     
-skip_second:
+check_third:
     ; Get third number
-    pop rdi                 ; Get third argument string
-    call string_to_int      ; Convert to integer
-    cmp rdx, 0              ; Check for conversion error
-    jne input_error         ; If error, handle it
+    pop rdi                 ; Get third argument
+    call atoi
     
-    ; Compare with current max (r12)
-    cmp rax, r12            ; Compare with current max
-    jle skip_third          ; If third <= current max, skip update
+    ; Compare with current max
+    cmp rax, r12
+    jle print_result        ; If third <= max, skip update
     mov r12, rax            ; Update max
     
-skip_third:
-    ; Convert max value to string
-    mov rax, r12            ; Put max value in rax for conversion
-    mov rdi, result_buffer  ; Output buffer
-    call int_to_string      ; Convert to string
-    mov r13, rax            ; Save string length
+print_result:
+    ; Convert max to string for display
+    mov rax, r12
+    mov rdi, buffer
+    call itoa
     
-    ; Display the result
+    ; Display result
     mov rax, 1              ; sys_write
     mov rdi, 1              ; stdout
-    mov rsi, result_buffer  ; Result string
-    mov rdx, r13            ; String length
+    mov rsi, buffer         ; string buffer
+    mov rdx, rcx            ; length from itoa
     syscall
     
-    ; Add newline
-    mov byte [result_buffer], 10   ; Newline character
+    ; Display newline
+    mov byte [buffer], 10   ; newline character
     mov rax, 1              ; sys_write
     mov rdi, 1              ; stdout
-    mov rsi, result_buffer  ; Newline string
-    mov rdx, 1              ; Length 1
+    mov rsi, buffer         ; buffer with newline
+    mov rdx, 1              ; length 1
     syscall
     
-    ; Exit successfully
+    ; Exit with success
     mov rax, 60             ; sys_exit
-    mov rdi, 0              ; Exit code 0
+    xor rdi, rdi            ; exit code 0
     syscall
 
 argument_error:
-    ; Exit with error code 1 (incorrect number of arguments)
+    ; Exit with error code 1 (wrong number of arguments)
     mov rax, 60             ; sys_exit
-    mov rdi, 1              ; Exit code 1
+    mov rdi, 1              ; exit code 1
     syscall
 
-input_error:
-    ; Exit with error code 2 (invalid input)
-    mov rax, 60             ; sys_exit
-    mov rdi, 2              ; Exit code 2
-    syscall
-
-; Convert string to integer
-; Input: RDI = string address
-; Output: RAX = integer, RDX = 0 if successful, 1 if error
-string_to_int:
+; Simple string to integer conversion
+; Input: RDI = string pointer
+; Output: RAX = integer value
+atoi:
     xor rax, rax            ; Clear result
-    xor r8, r8              ; Clear sign flag (0 = positive)
-    xor rdx, rdx            ; Clear error flag
+    xor rbx, rbx            ; Clear sign flag
     
-    ; Check for empty string
-    cmp byte [rdi], 0
-    je .error
-    
-    ; Check for sign
+    ; Check for minus sign
     cmp byte [rdi], '-'
     jne .check_plus
-    mov r8, 1               ; Set sign flag (negative)
+    mov rbx, 1              ; Set negative flag
     inc rdi                 ; Skip minus sign
-    jmp .validate_first
+    jmp .process_digits
     
 .check_plus:
     cmp byte [rdi], '+'
-    jne .validate_first
+    jne .process_digits
     inc rdi                 ; Skip plus sign
     
-.validate_first:
-    ; Ensure first character is a digit
-    movzx rcx, byte [rdi]
-    test rcx, rcx           ; Check for end of string
-    jz .error               ; Error if no digits
-    cmp rcx, '0'
-    jl .error               ; Error if below '0'
-    cmp rcx, '9'
-    jg .error               ; Error if above '9'
+.process_digits:
+    xor rcx, rcx            ; Clear digit
+    mov cl, byte [rdi]      ; Get current character
+    test cl, cl             ; Check for end of string
+    jz .apply_sign
     
-.convert:
-    movzx rcx, byte [rdi]   ; Get current character
-    test rcx, rcx           ; Check for end of string
-    jz .finish
-    
-    ; Validate digit
-    cmp rcx, '0'
-    jl .error               ; Error if not a digit
-    cmp rcx, '9'
-    jg .error
-    
-    ; Convert digit
-    sub rcx, '0'            ; Convert ASCII to digit
-    imul rax, 10            ; Multiply current result by 10
+    sub cl, '0'             ; Convert ASCII to number
+    imul rax, 10            ; Multiply current total by 10
     add rax, rcx            ; Add new digit
     
     inc rdi                 ; Move to next character
-    jmp .convert
+    jmp .process_digits
     
-.finish:
-    ; Apply sign if needed
-    test r8, r8
-    jz .success
-    neg rax                 ; Negate result if negative
+.apply_sign:
+    test rbx, rbx
+    jz .done
+    neg rax                 ; Negate if negative
     
-.success:
-    xor rdx, rdx            ; No error
-    ret                     ; Return integer in RAX
-    
-.error:
-    mov rdx, 1              ; Set error flag
+.done:
     ret
 
-; Convert integer to string
+; Integer to string conversion
 ; Input: RAX = integer, RDI = output buffer
-; Output: RAX = length of string
-int_to_string:
-    push rbx                ; Save registers
-    push rcx
-    push rdx
+; Output: RCX = string length
+itoa:
     push r8
     push r9
     
     mov r8, rdi             ; Save buffer start
-    xor r9, r9              ; Initialize length counter
+    xor rcx, rcx            ; Initialize counter
     
     ; Handle negative numbers
     test rax, rax
     jns .positive
-    
     neg rax                 ; Make positive
-    mov byte [rdi], '-'     ; Store minus sign
+    mov byte [rdi], '-'     ; Place minus sign
     inc rdi                 ; Move past sign
-    inc r9                  ; Include sign in length
+    inc rcx                 ; Count the sign
     
 .positive:
     ; Special case for 0
     test rax, rax
     jnz .convert
-    
-    mov byte [rdi], '0'     ; Store '0'
+    mov byte [rdi], '0'     ; Store "0"
     inc rdi                 ; Move buffer position
-    inc r9                  ; Increment length
+    inc rcx                 ; Increment length
     jmp .done
     
 .convert:
-    mov rbx, rdi            ; Save start of digit area
+    mov r9, rdi             ; Save digit area start
     
-    ; Convert digits (in reverse order)
-.convert_loop:
+    ; Convert digits in reverse order
+.loop:
     test rax, rax
     jz .reverse
     
     xor rdx, rdx            ; Clear for division
-    mov rcx, 10             ; Divisor
-    div rcx                 ; Divide by 10
+    mov rbx, 10
+    div rbx                 ; Divide by 10
     
-    add dl, '0'             ; Convert remainder to ASCII
+    add dl, '0'             ; Convert to ASCII
     mov [rdi], dl           ; Store digit
-    inc rdi                 ; Next buffer position
-    inc r9                  ; Increment length
-    
-    jmp .convert_loop
+    inc rdi                 ; Move buffer position
+    inc rcx                 ; Increment length counter
+    jmp .loop
     
 .reverse:
-    ; Now we need to reverse the digits (not including sign)
-    mov rcx, rdi            ; End position + 1
-    dec rcx                 ; Adjust to end position
+    ; r9 = start of digits (after sign if any)
+    ; rdi = one past last digit
+    ; Need to reverse digits (not including sign)
     
-    ; If we have a negative sign, adjust the start position
-    cmp byte [r8], '-'
-    jne .reverse_setup
-    inc rbx                 ; Skip the sign for reversal
-    
-.reverse_setup:
-    mov rdx, rcx            ; End position
-    sub rdx, rbx            ; Calculate number of digits - 1
-    shr rdx, 1              ; Divide by 2 (for pairs to swap)
-    inc rdx                 ; Adjust count
+    dec rdi                 ; Point to last digit
     
 .reverse_loop:
-    dec rdx                 ; Decrement counter
-    jz .done                ; Done when counter is 0
+    cmp r9, rdi             ; Check if we're done
+    jae .done               ; If start >= end, we're done
     
-    mov al, [rbx]           ; Get start character
-    mov ah, [rcx]           ; Get end character
-    mov [rbx], ah           ; Swap characters
-    mov [rcx], al
+    mov al, [r9]            ; Swap characters
+    mov bl, [rdi]
+    mov [r9], bl
+    mov [rdi], al
     
-    inc rbx                 ; Move start forward
-    dec rcx                 ; Move end backward
+    inc r9                  ; Move start forward
+    dec rdi                 ; Move end backward
     jmp .reverse_loop
     
 .done:
-    mov rax, r9             ; Return length
-    
-    pop r9                  ; Restore registers
+    pop r9
     pop r8
-    pop rdx
-    pop rcx
-    pop rbx
     ret
